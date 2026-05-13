@@ -1,63 +1,49 @@
- /* This file is part of the WiCAN project.
+/*
+ * hw_config.h — WICAN_CUSTOM target
+ * ESP32-S3 N16R8 + SN65HVD230 CAN transceiver
  *
- * Copyright (C) 2022  Meatpi Electronics.
- * Written by Ali Slim <ali@meatpi.com>
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * GPIO assignments:
+ *   CAN TX        → GPIO11
+ *   CAN RX        → GPIO10
+ *   CAN STDBY     → GPIO9   (dummy NC — SN65HVD230 Rs tied to GND)
+ *   BLE_EN        → GPIO8   (dummy, pulled DOWN → BLE always ON)
+ *   LED CONNECTED → GPIO4   (dummy NC)
+ *   LED ACTIVE    → GPIO5   (dummy NC)
+ *   LED POWER     → GPIO6   (dummy NC)
+ *   BATT ADC      → GPIO1   (ADC1_CH0, via R divider)
  */
-#ifndef GW_CONFIG_h
-#define GW_CONFIG_h
 
-#include "esp_err.h"
+#pragma once
+#include "driver/gpio.h"
 
-#if HARDWARE_VER == WICAN_PRO
-#define FS_MOUNT_POINT              "/fatfs"
-#define TX_GPIO_NUM             	2
-#define RX_GPIO_NUM             	1
-#define CAN_STDBY_GPIO_NUM			38
+/* ── Hardware version tag ─────────────────────────────── */
+#define WICAN_V210      0
+#define WICAN_V300      1
+#define WICAN_USB_V100  2
+#define WICAN_PRO       3
+#define WICAN_CUSTOM    4
 
-#define SDCARD_CLK                  21                 
-#define SDCARD_CMD                  47
-#define SDCARD_D0                   14
-#define SDCARD_D1                   13
-#define SDCARD_D2                   12
-#define SDCARD_D3                   48
+#define HARDWARE_VER    WICAN_CUSTOM
 
-#define OBD_RESET_PIN           (GPIO_NUM_41)
-#define OBD_LED_EN_PIN          (GPIO_NUM_42)
-#define OBD_READY_PIN           (GPIO_NUM_7)    // High = Active, Low = Sleep
-// #define CONNECTED_LED_GPIO_NUM		41  //NC pin
-// #define ACTIVE_LED_GPIO_NUM			41  //NC pin
-// #define BLE_EN_PIN_NUM				42  //NC pin
-// #define PWR_LED_GPIO_NUM			41  //NC pin
+/* ── CAN bus ──────────────────────────────────────────── */
+#define TX_GPIO_NUM         GPIO_NUM_11
+#define RX_GPIO_NUM         GPIO_NUM_10
+#define CAN_STDBY_GPIO_NUM  GPIO_NUM_9   /* dummy — NC */
 
-#define BUTTON_GPIO_NUM			    8
-#define IMU_INT_GPIO_NUM			3
+/* ── BLE enable (active LOW, pulled down → always ON) ─── */
+#define BLE_EN_PIN_NUM      GPIO_NUM_8
 
-#else
+/* ── LEDs (dummy, NC) ────────────────────────────────── */
+#define LED_CONNECTED_GPIO  GPIO_NUM_4
+#define LED_ACTIVE_GPIO     GPIO_NUM_5
+#define LED_PWR_GPIO        GPIO_NUM_6
 
-#define FS_MOUNT_POINT              "/spiffs"
-#define TX_GPIO_NUM             	0
-#define RX_GPIO_NUM             	3
-#define CONNECTED_LED_GPIO_NUM		8
-#define ACTIVE_LED_GPIO_NUM			9
-#define BLE_EN_PIN_NUM				5
-#define PWR_LED_GPIO_NUM			7
-#define CAN_STDBY_GPIO_NUM			6
+/* ── Battery ADC ─────────────────────────────────────── */
+/* GPIO1 = ADC1_CHANNEL_0 on ESP32-S3                     */
+/* Wire a resistor divider: Vbat─R1─GPIO1─R2─GND          */
+/* Recommended: R1=100K, R2=10K → max Vin=36V             */
+#define BATT_ADC_GPIO       GPIO_NUM_1
 
-#endif
-
-esp_err_t hw_config_get_device_id(char *uid);
-
-#endif
+/* ── PSRAM (OPI 8 MB on N16R8) ───────────────────────── */
+#define CONFIG_SPIRAM_MODE_OCT   1
+#define CONFIG_SPIRAM_SPEED_80M  1
