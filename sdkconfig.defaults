@@ -1,0 +1,25 @@
+# sdkconfig.defaults for WiCAN-Custom (ESP32-S3 N16R8)
+# These settings are applied before sdkconfig is generated.
+# Do NOT manually edit sdkconfig — edit this file instead.
+
+# ── Target ──────────────────────────────────────────────────────────
+CONFIG_IDF_TARGET="esp32s3"
+
+# ── Flash & PSRAM (ESP32-S3 N16R8: 16MB flash, 8MB PSRAM OPI) ───────
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# ── HTTP Server WebSocket support ────────────────────────────────────
+# Required by config_server.c: httpd_ws_frame_t, httpd_ws_recv_frame,
+# httpd_ws_send_frame_async, httpd_uri_t.is_websocket
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# ── SPIFFS ───────────────────────────────────────────────────────────
+CONFIG_SPIFFS_MAX_PARTITIONS=1
+
+# ── Partition table ──────────────────────────────────────────────────
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
