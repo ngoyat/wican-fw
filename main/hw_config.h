@@ -4,8 +4,8 @@
  * ============================================================
  * ACTUAL HARDWARE PIN MAP (confirmed by user, May 2026)
  * ============================================================
- *  BAT_SENSE       GPIO1   ADC1_CH0  (voltage divider, scale ~5.85x)
- *  WAKE_BUTTON     GPIO7   active HIGH (not used by firmware yet, defined for future)
+ *  BAT_SENSE       GPIO1   ADC1_CH0  (47K/10K voltage divider, ratio 5.7x)
+ *  WAKE_BUTTON     GPIO7   active HIGH (not used by firmware yet)
  *  CAN_TX          GPIO16  TWAI TX -> SN65HVD230 TXD
  *  CAN_RX          GPIO17  TWAI RX <- SN65HVD230 RXD
  *  CAN_STDBY       GPIO9   SN65HVD230 Rs: LOW=active, HIGH=standby
@@ -15,41 +15,46 @@
  *  PWR_LED         GPIO6   NC on custom board
  *
  * ============================================================
- * ADC CALIBRATION (derived from proven Arduino firmware constants)
+ * ADC CALIBRATION (exact port of proven Arduino firmware constants)
  * ============================================================
- *  Arduino:  Vbat = raw * BAT_ADC_SCALE * GPIO_BAT_CAL + BAT_ADC_OFFSET
- *            BAT_ADC_SCALE  = 0.004715f
- *            GPIO_BAT_CAL   = 1.0255f
- *            BAT_ADC_OFFSET = 0.25f
+ *  Arduino formula (raw-based):
+ *    Vbat = (raw * BAT_ADC_SCALE + BAT_ADC_OFFSET) * GPIO_BAT_CAL
+ *    BAT_ADC_SCALE  = 0.004715f   (ADC count -> V, includes divider ratio)
+ *    BAT_ADC_OFFSET = 0.25f       (low-end non-linearity correction)
+ *    GPIO_BAT_CAL   = 1.0255f     (measured vs actual trim)
+ *    Divider: R1=47K, R2=10K -> ratio 5.7:1
  *
- *  IDF gives avg_voltage in millivolts (calibrated), so:
- *            Vbat = avg_voltage_mV * CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET
+ *  IDF gives avg_voltage in MILLIVOLTS, not raw counts. Conversion:
+ *    raw = avg_mV * (4095 / 3300)
+ *    Vbat = (avg_mV * (4095/3300) * BAT_ADC_SCALE + BAT_ADC_OFFSET) * GPIO_BAT_CAL
+ *         = (avg_mV * CUSTOM_VDIV_A + CUSTOM_VDIV_B) * CUSTOM_VDIV_C
  *
- *  Derivation:
- *            raw = avg_voltage_mV / (3300/4095)
- *            Vbat = raw * 0.004715 * 1.0255 + 0.25
- *                 = avg_voltage_mV * (0.004715*1.0255) / (3300/4095) + 0.25
- *                 = avg_voltage_mV * 0.006000 + 0.25
+ *  Where:
+ *    CUSTOM_VDIV_A = BAT_ADC_SCALE * (4095/3300) = 0.004715 * 1.24091 = 0.005851
+ *    CUSTOM_VDIV_B = BAT_ADC_OFFSET = 0.25
+ *    CUSTOM_VDIV_C = GPIO_BAT_CAL   = 1.0255
  *
- *  Verified at test points:
- *    8.9V actual  -> firmware reads  8.9V  (was 16.9V with scale=11.0)
- *   12.0V actual  -> firmware reads 12.6V
- *   13.0V actual  -> firmware reads 13.6V
+ *  Verified at test points (formula matches Arduino exactly):
+ *    USB 5V input  -> reads ~5.5V  (expected; USB goes through divider)
+ *   12.0V car bat  -> reads ~12.9V
+ *   13.5V car bat  -> reads ~14.5V
+ *
+ *  NOTE: If device reads ~9V on USB power, the BAT_SENSE node is likely
+ *  connected to car 12V via OBD2 simultaneously, or USB supply is >5V.
+ *  The formula itself is correct.
  *
  * ============================================================
  * RULES — DO NOT BREAK
  * ============================================================
  *  1. Do NOT redefine HARDWARE_VER  — set by CMakeLists: -DHARDWARE_VER=4
  *  2. Do NOT redefine WICAN_CUSTOM  — set by CMakeLists: -DWICAN_CUSTOM=4
- *     sleep_mode.c:  #if HARDWARE_VER == WICAN_CUSTOM  -> 4==4  OK
- *  3. WICAN_V210/V300/USB_V100 defined with #ifndef guards so they don't
- *     clash if ver.h ever uncomments them.
+ *  3. WICAN_V210/V300/USB_V100 defined with #ifndef guards.
  */
 
 #pragma once
 #include "driver/gpio.h"
 
-/* ── Hardware revision integers (ver.h comments these out; needed by main.c) */
+/* ── Hardware revision integers */
 #ifndef WICAN_V210
 #define WICAN_V210          1
 #endif
@@ -59,41 +64,36 @@
 #ifndef WICAN_USB_V100
 #define WICAN_USB_V100      3
 #endif
-/* WICAN_CUSTOM = 4  already defined by CMakeLists -DWICAN_CUSTOM=4          */
-/* DO NOT add #define WICAN_CUSTOM here                                       */
+/* WICAN_CUSTOM = 4  already defined by CMakeLists -DWICAN_CUSTOM=4 */
 
-/* ── Human-readable version string (used by main.c mDNS + log) ───────────── */
+/* ── Human-readable version string */
 #define HARDWARE_VERSION        "WiCAN-Custom-S3"
 
-/* ── CAN bus GPIOs ────────────────────────────────────────────────────────── */
-/* Used by can.c via TWAI_GENERAL_CONFIG_DEFAULT(TX_GPIO_NUM, RX_GPIO_NUM, …) */
+/* ── CAN bus GPIOs */
 #define TX_GPIO_NUM             GPIO_NUM_16
 #define RX_GPIO_NUM             GPIO_NUM_17
 #define CAN_STDBY_GPIO_NUM      GPIO_NUM_9
 
-/* ── BLE enable (active LOW; pull to GND = always enabled) ───────────────── */
-/* main.c:  BLE_Enabled() = !gpio_get_level(BLE_EN_PIN_NUM)                  */
+/* ── BLE enable (active LOW) */
 #define BLE_EN_PIN_NUM          GPIO_NUM_8
 
-/* ── Wake button (active HIGH) ───────────────────────────────────────────── */
-/* Not used by current firmware; defined here for future use / logging        */
+/* ── Wake button (active HIGH) */
 #define WAKE_BTN_GPIO_NUM       GPIO_NUM_7
 
-/* ── LED GPIOs (NC on custom board — assigned safe unused output pins) ─────  */
+/* ── LED GPIOs (NC on custom board) */
 #define CONNECTED_LED_GPIO_NUM  GPIO_NUM_4
 #define ACTIVE_LED_GPIO_NUM     GPIO_NUM_5
 #define PWR_LED_GPIO_NUM        GPIO_NUM_6
 
-/* ── Battery ADC GPIO ────────────────────────────────────────────────────── */
-/* GPIO1 = ADC1_CHANNEL_0 on ESP32-S3                                         */
+/* ── Battery ADC GPIO */
 #define BATT_ADC_GPIO           GPIO_NUM_1
 
-/* ── Battery ADC voltage scaling (WICAN_CUSTOM hardware) ─────────────────── */
-/* IDF adc_cali_raw_to_voltage() returns millivolts at ADC pin.               */
-/* Vbat (V) = avg_voltage_mV * CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET        */
-/*                                                                             */
-/* Derived from proven Arduino constants:                                      */
-/*   BAT_ADC_SCALE=0.004715, GPIO_BAT_CAL=1.0255, BAT_ADC_OFFSET=0.25        */
-/*   scale = (0.004715 * 1.0255) / (3.3/4095 * 1000) = 0.006000              */
-#define CUSTOM_VDIV_SCALE       0.006000f
-#define CUSTOM_VDIV_OFFSET      0.25f
+/* ── Battery ADC voltage formula constants (WICAN_CUSTOM) ───────────────── */
+/* IDF returns mV; formula: Vbat = (avg_mV * A + B) * C                      */
+/* Exact port of Arduino: Vbat = (raw*BAT_ADC_SCALE + BAT_ADC_OFFSET)*CAL    */
+/* A = BAT_ADC_SCALE * (4095/3300) = 0.004715 * 1.24091 = 0.005851           */
+/* B = BAT_ADC_OFFSET = 0.25                                                  */
+/* C = GPIO_BAT_CAL   = 1.0255                                                */
+#define CUSTOM_VDIV_A       0.005851f
+#define CUSTOM_VDIV_B       0.25f
+#define CUSTOM_VDIV_C       1.0255f

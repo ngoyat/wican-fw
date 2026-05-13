@@ -3,10 +3,11 @@
  *
  * Changes from original:
  *  1. voltage_adc_ch: ADC_CHANNEL_4 -> ADC_CHANNEL_0 (GPIO1)
- *  2. read_ss_adc_voltage(): use CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET
- *     from hw_config.h (derived from proven Arduino calibration constants)
- *  3. adc_task: +0.2f offset guarded — does NOT apply to WICAN_CUSTOM
- *     because CUSTOM_VDIV_OFFSET already includes the 0.25V offset
+ *  2. read_ss_adc_voltage(): WICAN_CUSTOM uses 3-constant formula
+ *     matching exact Arduino firmware: (mV*A + B)*C
+ *     where A=0.005851, B=0.25, C=1.0255 (see hw_config.h)
+ *  3. adc_task: +0.2f offset NOT applied to WICAN_CUSTOM
+ *     (offset is already included in formula via CUSTOM_VDIV_B)
  */
 
 #include "freertos/FreeRTOS.h"
@@ -61,10 +62,6 @@
 #define MQTT_CONNECTED_BIT      BIT0
 #define PUB_SUCCESS_BIT         BIT1
 
-/*
- * GPIO1 = ADC1_CHANNEL_0 on ESP32-S3
- * All other variants keep ADC_CHANNEL_4 (GPIO5)
- */
 #if HARDWARE_VER == WICAN_CUSTOM
 static adc_channel_t voltage_adc_ch = ADC_CHANNEL_0;   /* GPIO1 */
 #else
@@ -206,11 +203,13 @@ esp_err_t read_ss_adc_voltage(float *voltage_out)
 
 #if HARDWARE_VER == WICAN_CUSTOM
         /*
-         * Vbat = avg_voltage_mV * CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET
-         * Constants derived from proven Arduino firmware (BAT_ADC_SCALE=0.004715,
-         * GPIO_BAT_CAL=1.0255, BAT_ADC_OFFSET=0.25). See hw_config.h for derivation.
+         * Exact port of Arduino formula:
+         *   Arduino: Vbat = (raw * BAT_ADC_SCALE + BAT_ADC_OFFSET) * GPIO_BAT_CAL
+         *   IDF:     Vbat = (avg_mV * CUSTOM_VDIV_A + CUSTOM_VDIV_B) * CUSTOM_VDIV_C
+         * where A = BAT_ADC_SCALE*(4095/3300), B = BAT_ADC_OFFSET, C = GPIO_BAT_CAL
+         * See hw_config.h for full derivation.
          */
-        volt_rounded = ((float)avg_voltage * CUSTOM_VDIV_SCALE) + CUSTOM_VDIV_OFFSET;
+        volt_rounded = ((float)avg_voltage * CUSTOM_VDIV_A + CUSTOM_VDIV_B) * CUSTOM_VDIV_C;
 #else
         if (project_hardware_rev == WICAN_V300)
             volt_rounded = (avg_voltage * 116) / (16 * 1000.0f);
@@ -267,9 +266,8 @@ static void adc_task(void *pvParameters)
         }
 
         /*
-         * +0.2f was a correction for WICAN_V300/V210 hardware.
-         * WICAN_CUSTOM uses CUSTOM_VDIV_OFFSET (0.25f) which already
-         * accounts for this — do NOT add extra offset here.
+         * +0.2f correction is for WICAN_V300/V210 hardware only.
+         * WICAN_CUSTOM offset is already included in CUSTOM_VDIV_B (0.25f).
          */
 #if HARDWARE_VER != WICAN_CUSTOM
         battery_voltage += 0.2f;
@@ -310,6 +308,7 @@ static void adc_task(void *pvParameters)
                             while (!wifi_network_is_connected()) {
                                 vTaskDelay(1000 / portTICK_PERIOD_MS);
                                 if (count++ > 10) break;
+;
                             }
                             if (wifi_network_is_connected()) {
                                 mqtt_init_sleep();
