@@ -1,11 +1,12 @@
 /*
  * sleep_mode.c — Modified for WICAN_CUSTOM (ESP32-S3 N16R8)
  *
- * Changes:
+ * Changes from original:
  *  1. voltage_adc_ch: ADC_CHANNEL_4 -> ADC_CHANNEL_0 (GPIO1)
- *  2. read_ss_adc_voltage(): WICAN_CUSTOM voltage divider case
- *     Divider on GPIO1: R1=100K, R2=10K -> scale = 11.0
- *     *** Measure your actual resistors and update CUSTOM_VDIV_SCALE ***
+ *  2. read_ss_adc_voltage(): use CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET
+ *     from hw_config.h (derived from proven Arduino calibration constants)
+ *  3. adc_task: +0.2f offset guarded — does NOT apply to WICAN_CUSTOM
+ *     because CUSTOM_VDIV_OFFSET already includes the 0.25V offset
  */
 
 #include "freertos/FreeRTOS.h"
@@ -69,22 +70,6 @@ static adc_channel_t voltage_adc_ch = ADC_CHANNEL_0;   /* GPIO1 */
 #else
 static adc_channel_t voltage_adc_ch = ADC_CHANNEL_4;
 #endif
-
-/*
- * Voltage divider scaling
- *   Vbat -- R1(100K) --+-- R2(10K) -- GND
- *                      +-- GPIO1 (ADC)
- *   Vbat = Vmeas_mV * (R1+R2)/R2 / 1000
- *        = Vmeas_mV * 11.0 / 1000   for 100K/10K
- *
- * *** CHANGE THIS TO MATCH YOUR ACTUAL RESISTORS ***
- * Common safe values for 12V car on 3.3V ADC:
- *   100K + 10K  -> 11.0   (max Vin=36V)  <- DEFAULT
- *    68K + 6.8K -> 11.0
- *    47K + 4.7K -> 11.0
- *   100K + 16K  -> 7.25   (WiCAN V300 original)
- */
-#define CUSTOM_VDIV_SCALE   11.0f
 
 static bool calibrated = false;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
@@ -216,12 +201,16 @@ esp_err_t read_ss_adc_voltage(float *voltage_out)
 
     if (valid_samples > 0) {
         int avg_raw     = sum_raw     / valid_samples;
-        int avg_voltage = sum_voltage / valid_samples;  /* millivolts */
+        int avg_voltage = sum_voltage / valid_samples;  /* millivolts at ADC pin */
         float volt_rounded = 0;
 
 #if HARDWARE_VER == WICAN_CUSTOM
-        /* GPIO1 divider: Vbat = Vmeas_mV * CUSTOM_VDIV_SCALE / 1000 */
-        volt_rounded = (avg_voltage * CUSTOM_VDIV_SCALE) / 1000.0f;
+        /*
+         * Vbat = avg_voltage_mV * CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET
+         * Constants derived from proven Arduino firmware (BAT_ADC_SCALE=0.004715,
+         * GPIO_BAT_CAL=1.0255, BAT_ADC_OFFSET=0.25). See hw_config.h for derivation.
+         */
+        volt_rounded = ((float)avg_voltage * CUSTOM_VDIV_SCALE) + CUSTOM_VDIV_OFFSET;
 #else
         if (project_hardware_rev == WICAN_V300)
             volt_rounded = (avg_voltage * 116) / (16 * 1000.0f);
@@ -277,7 +266,14 @@ static void adc_task(void *pvParameters)
             continue;
         }
 
+        /*
+         * +0.2f was a correction for WICAN_V300/V210 hardware.
+         * WICAN_CUSTOM uses CUSTOM_VDIV_OFFSET (0.25f) which already
+         * accounts for this — do NOT add extra offset here.
+         */
+#if HARDWARE_VER != WICAN_CUSTOM
         battery_voltage += 0.2f;
+#endif
         if (project_hardware_rev == WICAN_V210)
             battery_voltage = -1;
 

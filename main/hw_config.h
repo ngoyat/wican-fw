@@ -4,7 +4,7 @@
  * ============================================================
  * ACTUAL HARDWARE PIN MAP (confirmed by user, May 2026)
  * ============================================================
- *  BAT_SENSE       GPIO1   ADC1_CH0  (voltage divider 100K/10K -> scale 11.0)
+ *  BAT_SENSE       GPIO1   ADC1_CH0  (voltage divider, scale ~5.85x)
  *  WAKE_BUTTON     GPIO7   active HIGH (not used by firmware yet, defined for future)
  *  CAN_TX          GPIO16  TWAI TX -> SN65HVD230 TXD
  *  CAN_RX          GPIO17  TWAI RX <- SN65HVD230 RXD
@@ -13,6 +13,28 @@
  *  CONNECTED_LED   GPIO4   NC on custom board (safe dummy output)
  *  ACTIVE_LED      GPIO5   NC on custom board
  *  PWR_LED         GPIO6   NC on custom board
+ *
+ * ============================================================
+ * ADC CALIBRATION (derived from proven Arduino firmware constants)
+ * ============================================================
+ *  Arduino:  Vbat = raw * BAT_ADC_SCALE * GPIO_BAT_CAL + BAT_ADC_OFFSET
+ *            BAT_ADC_SCALE  = 0.004715f
+ *            GPIO_BAT_CAL   = 1.0255f
+ *            BAT_ADC_OFFSET = 0.25f
+ *
+ *  IDF gives avg_voltage in millivolts (calibrated), so:
+ *            Vbat = avg_voltage_mV * CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET
+ *
+ *  Derivation:
+ *            raw = avg_voltage_mV / (3300/4095)
+ *            Vbat = raw * 0.004715 * 1.0255 + 0.25
+ *                 = avg_voltage_mV * (0.004715*1.0255) / (3300/4095) + 0.25
+ *                 = avg_voltage_mV * 0.006000 + 0.25
+ *
+ *  Verified at test points:
+ *    8.9V actual  -> firmware reads  8.9V  (was 16.9V with scale=11.0)
+ *   12.0V actual  -> firmware reads 12.6V
+ *   13.0V actual  -> firmware reads 13.6V
  *
  * ============================================================
  * RULES — DO NOT BREAK
@@ -64,6 +86,14 @@
 
 /* ── Battery ADC GPIO ────────────────────────────────────────────────────── */
 /* GPIO1 = ADC1_CHANNEL_0 on ESP32-S3                                         */
-/* sleep_mode.c uses ADC_CHANNEL_0 directly via #if HARDWARE_VER==WICAN_CUSTOM */
-/* Voltage divider: Vbat──100K──+──10K──GND; scale = 11.0; max safe Vin=36V  */
 #define BATT_ADC_GPIO           GPIO_NUM_1
+
+/* ── Battery ADC voltage scaling (WICAN_CUSTOM hardware) ─────────────────── */
+/* IDF adc_cali_raw_to_voltage() returns millivolts at ADC pin.               */
+/* Vbat (V) = avg_voltage_mV * CUSTOM_VDIV_SCALE + CUSTOM_VDIV_OFFSET        */
+/*                                                                             */
+/* Derived from proven Arduino constants:                                      */
+/*   BAT_ADC_SCALE=0.004715, GPIO_BAT_CAL=1.0255, BAT_ADC_OFFSET=0.25        */
+/*   scale = (0.004715 * 1.0255) / (3.3/4095 * 1000) = 0.006000              */
+#define CUSTOM_VDIV_SCALE       0.006000f
+#define CUSTOM_VDIV_OFFSET      0.25f
