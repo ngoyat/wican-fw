@@ -3,11 +3,15 @@ name: Build WiCAN Custom Firmware
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -48,7 +52,6 @@ jobs:
 
       - name: Create merged flash image
         run: |
-          # build/ is owned by root (IDF Docker), write to /tmp first
           esptool \
             --chip esp32s3 merge-bin \
             -o /tmp/wican-fw-merged.bin \
@@ -66,3 +69,54 @@ jobs:
           name: wican-fw-merged-${{ steps.git_sha.outputs.sha }}
           path: build/wican-fw-merged.bin
           retention-days: 30
+
+      # --- Release: only runs when a version tag like v1.0.0 is pushed ---
+      - name: Rename binaries for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          sudo cp build/wican-fw-merged.bin        build/wican-fw-merged-${TAG}.bin
+          sudo cp build/wican-fw.bin               build/wican-fw-app-${TAG}.bin
+          sudo cp build/bootloader/bootloader.bin  build/bootloader-${TAG}.bin
+          sudo cp build/partition_table/partition-table.bin build/partition-table-${TAG}.bin
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: WiCAN Custom Firmware ${{ github.ref_name }}
+          body: |
+            ## WiCAN Pro Custom Firmware ${{ github.ref_name }}
+
+            Built from commit `${{ steps.git_sha.outputs.sha }}` with ESP-IDF v5.4.1 for **ESP32-S3**.
+
+            ### Flash Instructions
+
+            **Easiest — single merged binary (recommended):**
+            ```
+            esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 \
+              write_flash 0x0 wican-fw-merged-${{ github.ref_name }}.bin
+            ```
+
+            **Individual binaries:**
+            ```
+            esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 \
+              write_flash \
+              0x0000  bootloader-${{ github.ref_name }}.bin \
+              0x8000  partition-table-${{ github.ref_name }}.bin \
+              0x10000 wican-fw-app-${{ github.ref_name }}.bin
+            ```
+
+            ### Files
+            | File | Description |
+            |------|-------------|
+            | `wican-fw-merged-*.bin` | ✅ Single file — flash at 0x0000 |
+            | `wican-fw-app-*.bin` | App only — flash at 0x10000 |
+            | `bootloader-*.bin` | Bootloader — flash at 0x0000 |
+            | `partition-table-*.bin` | Partition table — flash at 0x8000 |
+          files: |
+            build/wican-fw-merged-${{ github.ref_name }}.bin
+            build/wican-fw-app-${{ github.ref_name }}.bin
+            build/bootloader-${{ github.ref_name }}.bin
+            build/partition-table-${{ github.ref_name }}.bin
