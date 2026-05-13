@@ -1,6 +1,7 @@
 # sdkconfig.defaults for WiCAN-Custom (ESP32-S3 N16R8)
-# These settings are applied before sdkconfig is generated.
+# These settings are applied BEFORE sdkconfig is generated.
 # Do NOT manually edit sdkconfig — edit this file instead.
+# ESP-IDF version: 5.4.1
 
 # ── Target ──────────────────────────────────────────────────────────
 CONFIG_IDF_TARGET="esp32s3"
@@ -8,18 +9,97 @@ CONFIG_IDF_TARGET="esp32s3"
 # ── Flash & PSRAM (ESP32-S3 N16R8: 16MB flash, 8MB PSRAM OPI) ───────
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# ── Partition table ──────────────────────────────────────────────────
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="wican_partitions_table.csv"
+CONFIG_PARTITION_TABLE_FILENAME="wican_partitions_table.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+CONFIG_PARTITION_TABLE_MD5=y
 
 # ── HTTP Server WebSocket support ────────────────────────────────────
 # Required by config_server.c: httpd_ws_frame_t, httpd_ws_recv_frame,
 # httpd_ws_send_frame_async, httpd_uri_t.is_websocket
 CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=1024
 
 # ── SPIFFS ───────────────────────────────────────────────────────────
-CONFIG_SPIFFS_MAX_PARTITIONS=1
+# Must be >= number of spiffs partitions in partition table (we have 1
+# named 'storage', but upstream default is 3 — keep 3 for safety)
+CONFIG_SPIFFS_MAX_PARTITIONS=3
+CONFIG_SPIFFS_USE_MAGIC=y
+CONFIG_SPIFFS_USE_MAGIC_LENGTH=y
+CONFIG_SPIFFS_META_LENGTH=4
+CONFIG_SPIFFS_CACHE=y
+CONFIG_SPIFFS_CACHE_WR=y
+CONFIG_SPIFFS_PAGE_SIZE=256
+CONFIG_SPIFFS_OBJ_NAME_LEN=32
+CONFIG_SPIFFS_USE_MTIME=y
 
-# ── Partition table ──────────────────────────────────────────────────
-CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+# ── OTA / Bootloader ─────────────────────────────────────────────────
+# Rollback support: if new firmware crashes before marking itself valid,
+# bootloader automatically boots the previous OTA slot.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_BOOTLOADER_WDT_ENABLE=y
+CONFIG_BOOTLOADER_WDT_TIME_MS=9000
+
+# ── Watchdog ─────────────────────────────────────────────────────────
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_ESP_INT_WDT=y
+CONFIG_ESP_INT_WDT_TIMEOUT_MS=800
+
+# ── Stack sizes (S3 runs more features than C3) ───────────────────────
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=4096
+
+# ── CPU & system ─────────────────────────────────────────────────────
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+
+# ── WiFi ─────────────────────────────────────────────────────────────
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=y
+CONFIG_ESP_WIFI_NVS_ENABLED=y
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
+
+# ── LWIP / TCP ───────────────────────────────────────────────────────
+CONFIG_LWIP_MAX_SOCKETS=16
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=4096
+
+# ── Bluetooth ────────────────────────────────────────────────────────
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_BLE_ENABLED=y
+CONFIG_BT_GATTS_ENABLE=y
+CONFIG_BT_GATTC_ENABLE=y
+
+# ── MQTT ─────────────────────────────────────────────────────────────
+CONFIG_MQTT_PROTOCOL_311=y
+CONFIG_MQTT_TRANSPORT_SSL=y
+CONFIG_MQTT_TRANSPORT_WEBSOCKET=y
+CONFIG_MQTT_TRANSPORT_WEBSOCKET_SECURE=y
+CONFIG_MQTT_SKIP_PUBLISH_IF_DISCONNECTED=y
+
+# ── Log level (INFO in production — change to DEBUG to diagnose) ──────
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3

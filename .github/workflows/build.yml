@@ -14,21 +14,53 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
-      - name: Build with ESP-IDF v5.1
+      - name: Get short Git SHA
+        id: git_sha
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # ESP-IDF version MUST match the version that generated sdkconfig (5.4.1).
+      # Using a different version causes silent ABI mismatches and runtime crashes.
+      # Do NOT add 'idf.py set-target' here — that deletes sdkconfig and loses all
+      # custom settings. sdkconfig.defaults handles target + config automatically.
+      - name: Build with ESP-IDF v5.4.1
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.1.5
+          esp_idf_version: v5.4.1
           target: esp32s3
           path: '.'
-          command: idf.py set-target esp32s3 && idf.py build
+          command: >
+            idf.py build
+            -DGIT_SHA="${{ steps.git_sha.outputs.sha }}"
 
       - name: Upload firmware binaries
         uses: actions/upload-artifact@v4
         with:
-          name: wican-custom-firmware
+          name: wican-custom-firmware-${{ steps.git_sha.outputs.sha }}
           path: |
             build/wican-fw.bin
             build/bootloader/bootloader.bin
             build/partition_table/partition-table.bin
+            build/wican-fw.map
+          retention-days: 30
+
+      - name: Create merged flash image
+        run: |
+          python3 $IDF_PATH/components/esptool_py/esptool/esptool.py \
+            --chip esp32s3 merge_bin \
+            -o build/wican-fw-merged.bin \
+            --flash_mode dio \
+            --flash_freq 80m \
+            --flash_size 16MB \
+            0x0000  build/bootloader/bootloader.bin \
+            0x8000  build/partition_table/partition-table.bin \
+            0x10000 build/wican-fw.bin
+        continue-on-error: true
+
+      - name: Upload merged flash image
+        uses: actions/upload-artifact@v4
+        with:
+          name: wican-fw-merged-${{ steps.git_sha.outputs.sha }}
+          path: build/wican-fw-merged.bin
           retention-days: 30
